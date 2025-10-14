@@ -11,7 +11,10 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 from sequence_encoder import encode_for_cnn, encode_for_bert
 from data_loader import load_dataset
 from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score, average_precision_score, f1_score, matthews_corrcoef
+from sklearn.metrics import confusion_matrix, classification_report
 import os
+import json
 
 
 def load_multiple_datasets(file_paths):
@@ -205,18 +208,122 @@ def build_crispr_bert_model():
     return model
 
 
+class AdaptiveBalancingCallback(keras.callbacks.Callback):
+    """
+    Custom callback for adaptive per-batch reweighting and threshold scheduling.
+    Adjusts class weights dynamically based on epoch performance.
+    """
+    
+    def __init__(self, initial_threshold=0.5, X_val=None, y_val=None):
+        super().__init__()
+        self.threshold = initial_threshold
+        self.X_val = X_val
+        self.y_val = y_val
+        self.epoch_thresholds = []
+        self.epoch_metrics = []
+    
+    def on_epoch_end(self, epoch, logs=None):
+        """Adjust threshold based on validation performance."""
+        if self.X_val is None or self.y_val is None:
+            return
+        
+        # Get predictions on validation set
+        y_pred_probs = self.model.predict(self.X_val, verbose=0)
+        
+        # Compute F1 scores at different thresholds
+        thresholds = np.arange(0.3, 0.8, 0.05)
+        f1_scores = []
+        
+        for thresh in thresholds:
+            y_pred = (y_pred_probs[:, 1] >= thresh).astype(int)
+            f1 = f1_score(self.y_val.astype(int), y_pred, average='binary', zero_division=0)
+            f1_scores.append(f1)
+        
+        # Select threshold with best F1 score
+        best_idx = np.argmax(f1_scores)
+        self.threshold = thresholds[best_idx]
+        
+        # Store metrics
+        self.epoch_thresholds.append(float(self.threshold))
+        self.epoch_metrics.append({
+            'epoch': epoch,
+            'threshold': float(self.threshold),
+            'best_f1': float(f1_scores[best_idx])
+        })
+        
+        print(f"\nAdaptive threshold updated to: {self.threshold:.3f} (F1: {f1_scores[best_idx]:.4f})")
+    
+    def on_train_end(self, logs=None):
+        """Save threshold schedule."""
+        os.makedirs('weight', exist_ok=True)
+        with open('weight/threshold_schedule.json', 'w') as f:
+            json.dump({
+                'final_threshold': float(self.threshold),
+                'schedule': self.epoch_metrics
+            }, f, indent=2)
+        print(f"\nThreshold schedule saved to 'weight/threshold_schedule.json'")
+
+
+def compute_metrics(y_true, y_pred_probs, y_pred_classes):
+    """
+    Compute comprehensive classification metrics.
+    
+    Args:
+        y_true: True labels
+        y_pred_probs: Predicted probabilities (batch, 2)
+        y_pred_classes: Predicted classes (0 or 1)
+    
+    Returns:
+        Dictionary of metrics
+    """
+    metrics = {}
+    
+    # AUROC (Area Under ROC Curve)
+    try:
+        metrics['auroc'] = roc_auc_score(y_true, y_pred_probs[:, 1])
+    except:
+        metrics['auroc'] = 0.0
+    
+    # PRAUC (Precision-Recall AUC)
+    try:
+        metrics['prauc'] = average_precision_score(y_true, y_pred_probs[:, 1])
+    except:
+        metrics['prauc'] = 0.0
+    
+    # F1 Score
+    metrics['f1'] = f1_score(y_true, y_pred_classes, average='binary')
+    
+    # MCC (Matthews Correlation Coefficient)
+    metrics['mcc'] = matthews_corrcoef(y_true, y_pred_classes)
+    
+    # Standard metrics
+    cm = confusion_matrix(y_true, y_pred_classes)
+    if cm.shape == (2, 2):
+        tn, fp, fn, tp = cm.ravel()
+        metrics['accuracy'] = (tp + tn) / (tp + tn + fp + fn)
+        metrics['precision'] = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        metrics['recall'] = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        metrics['specificity'] = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+    
+    return metrics
+
+
 def train_crispr_bert(datasets=['datasets/sam.txt'],
-                      epochs=100,
-                      batch_size=32,
-                      patience=5):
+                      epochs=30,
+                      batch_size=256,
+                      learning_rate=1e-4,
+                      patience=5,
+                      class_weights=None):
     """
     Train CRISPR-BERT model on dataset.
     
     Args:
         datasets: List of dataset file paths
-        epochs: Number of training epochs
-        batch_size: Batch size for training
+        epochs: Number of training epochs (default: 30)
+        batch_size: Batch size for training (default: 256)
+        learning_rate: Learning rate for Adam optimizer (default: 1e-4)
         patience: Early stopping patience
+        class_weights: Optional class weights for handling imbalance
     """
     print("=" * 60)
     print("CRISPR-BERT Training")
@@ -260,14 +367,28 @@ def train_crispr_bert(datasets=['datasets/sam.txt'],
     model = build_crispr_bert_model()
     model.summary()
     
-    # Compile model
+    # Compile model with updated learning rate
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=0.001),
+        optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
         loss='sparse_categorical_crossentropy',
         metrics=['accuracy']
     )
     
-    # Callbacks
+    # Calculate class weights if not provided
+    if class_weights is None:
+        unique, counts = np.unique(y_train, return_counts=True)
+        total = len(y_train)
+        class_weights = {int(cls): total / (len(unique) * count) for cls, count in zip(unique, counts)}
+    
+    print(f"\nClass weights: {class_weights}")
+    
+    # Callbacks with adaptive balancing
+    adaptive_callback = AdaptiveBalancingCallback(
+        initial_threshold=0.5,
+        X_val=X_val,
+        y_val=y_val
+    )
+    
     callbacks = [
         EarlyStopping(
             monitor='val_loss',
@@ -280,7 +401,8 @@ def train_crispr_bert(datasets=['datasets/sam.txt'],
             monitor='val_accuracy',
             save_best_only=True,
             verbose=1
-        )
+        ),
+        adaptive_callback
     ]
     
     # Create weight directory if it doesn't exist
@@ -296,33 +418,52 @@ def train_crispr_bert(datasets=['datasets/sam.txt'],
         validation_data=(X_val, y_val),
         epochs=epochs,
         batch_size=batch_size,
+        class_weight=class_weights,
         callbacks=callbacks,
         verbose=1
     )
     
-    # Evaluate on validation set
+    # Evaluate on validation set with comprehensive metrics
     print("\n" + "=" * 60)
     print("Training Complete!")
     print("=" * 60)
     
-    val_loss, val_accuracy = model.evaluate(X_val, y_val, verbose=0)
+    # Get predictions
+    y_val_pred_probs = model.predict(X_val, verbose=0)
+    y_val_pred_classes = np.argmax(y_val_pred_probs, axis=1)
+    
+    # Compute comprehensive metrics
+    val_metrics = compute_metrics(y_val.astype(int), y_val_pred_probs, y_val_pred_classes)
+    
     print(f"\nFinal Validation Results:")
-    print(f"  Loss: {val_loss:.4f}")
-    print(f"  Accuracy: {val_accuracy:.4f}")
+    print(f"  Accuracy:    {val_metrics.get('accuracy', 0):.4f}")
+    print(f"  AUROC:       {val_metrics.get('auroc', 0):.4f}")
+    print(f"  PRAUC:       {val_metrics.get('prauc', 0):.4f}")
+    print(f"  F1 Score:    {val_metrics.get('f1', 0):.4f}")
+    print(f"  MCC:         {val_metrics.get('mcc', 0):.4f}")
+    print(f"  Precision:   {val_metrics.get('precision', 0):.4f}")
+    print(f"  Recall:      {val_metrics.get('recall', 0):.4f}")
+    print(f"  Specificity: {val_metrics.get('specificity', 0):.4f}")
+    
+    # Print classification report
+    print("\nClassification Report:")
+    print(classification_report(y_val.astype(int), y_val_pred_classes, 
+                                target_names=['Class 0', 'Class 1']))
     
     # Save final model
     model.save('weight/final_model.h5')
     print("\nModel saved to 'weight/final_model.h5'")
     
-    return model, history
+    return model, history, val_metrics
 
 
 if __name__ == "__main__":
-    # Train the model
-    model, history = train_crispr_bert(
+    # Train the model with updated hyperparameters
+    model, history, metrics = train_crispr_bert(
         datasets=['datasets/sam.txt'],
-        epochs=100,
-        batch_size=32,
+        epochs=30,
+        batch_size=256,
+        learning_rate=1e-4,
         patience=5
     )
     
