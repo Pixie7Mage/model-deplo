@@ -397,7 +397,7 @@ def train_crispr_bert(datasets=['datasets/sam.txt'],
             verbose=1
         ),
         ModelCheckpoint(
-            'weight/best_model.h5',
+            'weight/best_model.keras',
             monitor='val_accuracy',
             save_best_only=True,
             verbose=1
@@ -451,8 +451,8 @@ def train_crispr_bert(datasets=['datasets/sam.txt'],
                                 target_names=['Class 0', 'Class 1']))
     
     # Save final model
-    model.save('weight/final_model.h5')
-    print("\nModel saved to 'weight/final_model.h5'")
+    model.save('weight/final_model.keras')
+    print("\nModel saved to 'weight/final_model.keras'")
     
     return model, history, val_metrics
 

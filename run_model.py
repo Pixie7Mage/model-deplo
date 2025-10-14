@@ -13,7 +13,7 @@ import json
 
 # ========== OPTION 1: Single Prediction ==========
 
-def load_trained_model(model_path='weight/final_model.h5'):
+def load_trained_model(model_path='weight/final_model.keras'):
     """
     Load a trained Keras model.
     
@@ -56,7 +56,7 @@ def load_threshold(threshold_path='weight/threshold_schedule.json'):
         return 0.5
 
 
-def predict_single_sequence(sgrna, dna, model_path='weight/final_model.h5', 
+def predict_single_sequence(sgrna, dna, model_path='weight/final_model.keras', 
                            use_threshold=True):
     """
     Predict for a single sgRNA-DNA pair using trained Keras model.
@@ -113,7 +113,7 @@ def predict_single_sequence(sgrna, dna, model_path='weight/final_model.h5',
 
 # ========== OPTION 2: Batch Prediction ==========
 
-def predict_batch(sgrna_list, dna_list, model_path='weight/final_model.h5',
+def predict_batch(sgrna_list, dna_list, model_path='weight/final_model.keras',
                  use_threshold=True):
     """
     Predict for multiple sgRNA-DNA pairs using trained Keras model.
@@ -177,7 +177,7 @@ def predict_batch(sgrna_list, dna_list, model_path='weight/final_model.h5',
 
 # ========== OPTION 3: Load from Dataset File ==========
 
-def predict_from_dataset(file_path, max_samples=None, model_path='weight/final_model.h5',
+def predict_from_dataset(file_path, max_samples=None, model_path='weight/final_model.keras',
                         use_threshold=True):
     """
     Load data from txt file and make predictions using trained Keras model.
@@ -260,7 +260,7 @@ if __name__ == "__main__":
     print("=" * 60)
     
     # Check if model exists
-    if not os.path.exists('weight/final_model.h5'):
+    if not os.path.exists('weight/final_model.keras'):
         print("\n⚠️  WARNING: No trained model found!")
         print("Please run train_model.py first to train the model.")
         print("\nYou can train the model by running:")
