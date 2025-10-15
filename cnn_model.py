@@ -349,17 +349,33 @@ class Dropout:
 class InceptionCNN:
     """
     Inception-based CNN Branch for CRISPR-BERT.
-    Architecture: Input (26, 7) → Multi-scale Conv2D → Output (26, 80)
+    Architecture: Input (batch, 26, 7) → Multi-scale Conv2D → Output (batch, 26, 80)
     
-    Channels: 5, 15, 25, 35 (total = 80)
-    Kernel sizes: 1×1, 2×2, 3×3, 5×5
+    From paper: Four parallel 2D convolutional layers with different channels and kernel sizes:
+    - Branch 1: 5 channels, 1×1 kernel
+    - Branch 2: 15 channels, 2×2 kernel  
+    - Branch 3: 25 channels, 3×3 kernel
+    - Branch 4: 35 channels, 5×5 kernel
+    - Concatenate: 5+15+25+35 = 80 channels
+    
+    Input: 26×7 binary matrix
+    Output: 26×80 matrix
     """
     
     def __init__(self):
-        # Multi-scale Conv2D layers with specific channel counts
-        self.conv_1x1 = Conv2D(in_channels=1, out_channels=5, kernel_size=(1, 1))
+        # Four parallel Conv2D layers with different kernel sizes
+        # in_channels=1 because we reshape (batch, 26, 7) → (batch, 26, 7, 1)
+        
+        # Branch 1: 5 channels with 1×1 kernel
+        self.conv_1x1 = Conv2D(in_channels=1, out_channels=5, kernel_size=(1, 1), padding=0)
+        
+        # Branch 2: 15 channels with 2×2 kernel
         self.conv_2x2 = Conv2D(in_channels=1, out_channels=15, kernel_size=(2, 2), padding=0)
+        
+        # Branch 3: 25 channels with 3×3 kernel (padding=1 for 'same')
         self.conv_3x3 = Conv2D(in_channels=1, out_channels=25, kernel_size=(3, 3), padding=1)
+        
+        # Branch 4: 35 channels with 5×5 kernel (padding=2 for 'same')
         self.conv_5x5 = Conv2D(in_channels=1, out_channels=35, kernel_size=(5, 5), padding=2)
         
         self.relu = ReLU()
@@ -369,34 +385,42 @@ class InceptionCNN:
         Forward pass through Inception CNN.
         
         Args:
-            x: Input of shape (batch, 26, 7) - CNN encoded sequences
+            x: Input of shape (batch, 26, 7) - CNN encoded sequences (binary matrix)
         
         Returns:
             Output of shape (batch, 26, 80)
         """
         batch_size = x.shape[0]
         
-        # Reshape for Conv2D: (batch, 26, 7, 1) - add channel dimension
-        x = x.reshape(batch_size, 26, 7, 1)
+        # Reshape for Conv2D: (batch, height, width, channels)
+        # Add channel dimension: (batch, 26, 7, 1)
+        x_reshaped = x.reshape(batch_size, 26, 7, 1)
         
-        # Apply multi-scale convolutions with ReLU
-        conv1_out = self.relu.forward(self.conv_1x1.forward(x))  # (batch, 26, 7, 5)
-        conv2_out = self.relu.forward(self.conv_2x2.forward(x))  # (batch, 25, 6, 15)
-        conv3_out = self.relu.forward(self.conv_3x3.forward(x))  # (batch, 26, 7, 25)
-        conv5_out = self.relu.forward(self.conv_5x5.forward(x))  # (batch, 26, 7, 35)
+        # Branch 1: 1×1 convolution
+        conv1_out = self.relu.forward(self.conv_1x1.forward(x_reshaped))  # (batch, 26, 7, 5)
         
-        # Resize conv2 output to match 26×7 (pad if needed)
+        # Branch 2: 2×2 convolution  
+        conv2_out = self.relu.forward(self.conv_2x2.forward(x_reshaped))  # (batch, 25, 6, 15)
+        
+        # Branch 3: 3×3 convolution
+        conv3_out = self.relu.forward(self.conv_3x3.forward(x_reshaped))  # (batch, 26, 7, 25)
+        
+        # Branch 4: 5×5 convolution
+        conv5_out = self.relu.forward(self.conv_5x5.forward(x_reshaped))  # (batch, 26, 7, 35)
+        
+        # Handle dimension mismatch from 2×2 conv (no padding)
+        # Resize conv2_out to match 26×7
         if conv2_out.shape[1] != 26 or conv2_out.shape[2] != 7:
-            new_conv2 = np.zeros((batch_size, 26, 7, 15))
+            conv2_resized = np.zeros((batch_size, 26, 7, 15))
             h, w = min(conv2_out.shape[1], 26), min(conv2_out.shape[2], 7)
-            new_conv2[:, :h, :w, :] = conv2_out[:, :h, :w, :]
-            conv2_out = new_conv2
+            conv2_resized[:, :h, :w, :] = conv2_out[:, :h, :w, :]
+            conv2_out = conv2_resized
         
-        # Concatenate along channel dimension: 5 + 15 + 25 + 35 = 80 channels
-        conv_concat = np.concatenate([conv1_out, conv2_out, conv3_out, conv5_out], axis=-1)
+        # Concatenate all branches along channel dimension: 5+15+25+35 = 80 channels
+        concat = np.concatenate([conv1_out, conv2_out, conv3_out, conv5_out], axis=-1)
         # Shape: (batch, 26, 7, 80)
         
         # Average over width dimension to get (batch, 26, 80)
-        output = np.mean(conv_concat, axis=2)  # (batch, 26, 80)
+        output = np.mean(concat, axis=2)  # (batch, 26, 80)
         
         return output

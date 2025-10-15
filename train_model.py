@@ -7,7 +7,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, models
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
+from tensorflow.keras.callbacks import EarlyStopping
 from sequence_encoder import encode_for_cnn, encode_for_bert
 from data_loader import load_dataset
 from sklearn.model_selection import train_test_split
@@ -396,12 +396,6 @@ def train_crispr_bert(datasets=['datasets/sam.txt'],
             restore_best_weights=True,
             verbose=1
         ),
-        ModelCheckpoint(
-            'weight/best_model.keras',
-            monitor='val_accuracy',
-            save_best_only=True,
-            verbose=1
-        ),
         adaptive_callback
     ]
     
@@ -450,9 +444,8 @@ def train_crispr_bert(datasets=['datasets/sam.txt'],
     print(classification_report(y_val.astype(int), y_val_pred_classes, 
                                 target_names=['Class 0', 'Class 1']))
     
-    # Save final model
-    model.save('weight/final_model.keras')
-    print("\nModel saved to 'weight/final_model.keras'")
+    # Model weights are not saved - using random initialization for each training run
+    print("\nTraining complete. Model starts with random weights each run.")
     
     return model, history, val_metrics
 
