@@ -1,8 +1,9 @@
 # app.py
-from fastapi import FastAPI
 from pydantic import BaseModel
 import numpy as np
 import pickle
+from fastapi import FastAPI
+
 
 app = FastAPI()
 
