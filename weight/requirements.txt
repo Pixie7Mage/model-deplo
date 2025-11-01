@@ -1,8 +1,0 @@
-fastapi
-uvicorn[standard]
-numpy
-scikit-learn
-pydantic
-tensorflow
-pandas
-h5py

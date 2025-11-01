@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]=
+scikit-learn
+pydantic
+tensorflow
+pandas
+h5py
+torch==2.3.0
+numpy==1.25.0
