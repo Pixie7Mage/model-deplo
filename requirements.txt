@@ -1,6 +1,9 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-tensorflow-cpu==2.20.0
-numpy==1.26.4
-scikit-learn==1.5.2
-pydantic==2.4.2
+fastapi
+uvicorn[standard]
+scikit-learn
+pydantic
+tensorflow
+pandas
+h5py
+torch
+numpy
