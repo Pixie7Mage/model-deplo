@@ -15,6 +15,7 @@ from sklearn.metrics import roc_auc_score, average_precision_score, f1_score, ma
 from sklearn.metrics import confusion_matrix, classification_report
 import os
 import json
+import pickle
 
 
 def load_multiple_datasets(file_paths):
@@ -444,8 +445,16 @@ def train_crispr_bert(datasets=['datasets/sam.txt'],
     print(classification_report(y_val.astype(int), y_val_pred_classes, 
                                 target_names=['Class 0', 'Class 1']))
     
-    # Model weights are not saved - using random initialization for each training run
-    print("\nTraining complete. Model starts with random weights each run.")
+    # Save model using pickle format
+    model_save_path = os.path.join('weight', 'model.pkl')
+    print(f"\nSaving model to {model_save_path}...")
+    with open(model_save_path, 'wb') as f:
+        pickle.dump({
+            'model': model,
+            'history': history,
+            'metrics': val_metrics
+        }, f)
+    print("Model saved successfully!")
     
     return model, history, val_metrics
 
