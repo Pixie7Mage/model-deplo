@@ -1,8 +1,7 @@
 # app.py
-
 import os
-# ✅ Disable GPU so TensorFlow/Keras doesn’t try to use CUDA on Render
-os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 from pydantic import BaseModel
 from fastapi import FastAPI

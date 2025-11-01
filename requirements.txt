@@ -1,9 +1,6 @@
-fastapi
-uvicorn[standard]
-scikit-learn
-pydantic
-tensorflow
-pandas
-h5py
-torch
-numpy
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+tensorflow-cpu==2.15.0  # Use CPU-only version
+numpy==1.24.3
+scikit-learn==1.3.2
+pydantic==2.4.2
